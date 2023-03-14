@@ -187,8 +187,8 @@ def train(mymodel, num_epochs, train_dataloader, validation_dataloader, device, 
 # implements parameter selection and returns a list with (learning rate, epochs, validation accuracy, test accuracy)
 def train2(mymodel, train_dataloader, validation_dataloader, device):
 
-    learning_rates = [1e-4, 1e-3]
-    num_epochs_list = [7, 9]
+    learning_rates = [1e-4, 5e-4, 1e-3]
+    num_epochs_list = [5, 7, 9]
 
     results = []
 
@@ -275,6 +275,63 @@ def train2(mymodel, train_dataloader, validation_dataloader, device):
 
     return results
 
+# for t5 models
+def train3(mymodel, num_epochs, train_dataloader, validation_dataloader, device, lr):
+    optimizer = None  # T5 uses a different optimizer
+    lr_scheduler = None  # T5 uses a different scheduler
+    loss = torch.nn.functional.cross_entropy  # use cross-entropy loss
+
+    train_acc_list = []  # to store training accuracies for each epoch
+    val_acc_list = []
+
+    for epoch in range(num_epochs):
+        # put the model in training mode
+        mymodel.train()
+
+        # load metrics
+        train_accuracy = evaluate.load('accuracy')
+
+        print(f"Epoch {epoch + 1} training:")
+
+        for i, batch in enumerate(train_dataloader):
+            input_ids = batch['input_ids'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
+            labels = batch['labels'].to(device)
+
+            # forward pass
+            outputs = mymodel(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+            loss_value = outputs.loss
+
+            # backward pass
+            loss_value.backward()
+
+            # update the model parameters
+            optimizer.step()
+
+            # zero the gradients for the next iteration
+            optimizer.zero_grad()
+
+            # get predictions
+            logits = outputs.logits
+            predictions = torch.argmax(logits, dim=1)
+
+            # update metrics
+            train_accuracy.add_batch(predictions=predictions, references=labels)
+
+        # print evaluation metrics
+        print(f" ===> Epoch {epoch + 1}")
+
+        train_acc = train_accuracy.compute()['accuracy']
+        print(f" - Average training metrics: accuracy={train_acc}")
+        train_acc_list.append(train_acc)
+
+        val_accuracy = evaluate_model(mymodel, validation_dataloader, device)
+        print(f" - Average validation metrics: accuracy={val_accuracy}")
+        val_acc_list.append(val_accuracy['accuracy'])
+
+    return train_acc_list, val_acc_list
+
+
 def pre_process(model_name, batch_size, device, small_subset):
     # download dataset
     print("Loading the dataset ...")
@@ -342,9 +399,10 @@ def pre_process(model_name, batch_size, device, small_subset):
     pretrained_model.to(device)
     return pretrained_model, train_dataloader, validation_dataloader, test_dataloader
 
-
+# Problem 7, train2 for parameter selection
 # the entry point of the program
 if __name__ == "__main__":
+    
     parser = argparse.ArgumentParser()
     parser.add_argument("--experiment", type=str, default=None)
     parser.add_argument("--small_subset", action='store_true')
@@ -386,6 +444,9 @@ if __name__ == "__main__":
     # Problem 7 results
     print(result)
 
+    
+
+# Problem 8
 # if __name__ == "__main__":
 #     parser = argparse.ArgumentParser()
 #     parser.add_argument("--experiment", type=str, default=None)
@@ -441,3 +502,67 @@ if __name__ == "__main__":
 #     # save the plot and show it
 #     plt.savefig('test_validation_accuracies.png')
 #     plt.show()
+
+# Problem 9
+# if __name__ == "__main__":
+#     parser = argparse.ArgumentParser()
+#     parser.add_argument("--experiment", type=str, default=None)
+#     parser.add_argument("--small_subset", action='store_true')
+#     parser.add_argument("--num_epochs", type=int, default=1)
+#     parser.add_argument("--lr", type=float, default=5e-5)
+#     parser.add_argument("--batch_size", type=int, default=32)
+#     parser.add_argument("--device", type=str, default="cuda")
+#     parser.add_argument("--model", type=str, default="distilbert-base-uncased")
+#     args = parser.parse_args()
+#     print(f"Specified arguments: {args}")
+
+#     assert type(args.small_subset) == bool, "small_subset must be a boolean"
+
+#     # load the data and models
+#     pretrained_model, train_dataloader, validation_dataloader, test_dataloader = pre_process(args.model,
+#                                                                                              args.batch_size,
+#                                                                                              args.device,
+#                                                                                              args.small_subset)
+
+#     optimizer = torch.optim.AdamW(pretrained_model.parameters(), lr=args.lr)
+#     scheduler = get_scheduler("linear", optimizer=optimizer, num_warmup_steps=50,
+#                               num_training_steps=len(train_dataloader) * args.num_epochs)
+#     train_acc_list, val_acc_list = train(pretrained_model, args.num_epochs, train_dataloader, validation_dataloader,
+#                                          args.device, args.lr, optimizer, scheduler)
+
+#     val_accuracy = evaluate_model(pretrained_model, validation_dataloader, args.device)
+#     print(f" - Average DEV metrics: accuracy={val_accuracy}")
+
+#     test_accuracy = evaluate_model(pretrained_model, test_dataloader, args.device)
+#     print(f" - Average TEST metrics: accuracy={test_accuracy}")
+
+#     print("(learning rate, epochs, validation accuracy, test accuracy)")
+
+#     # create a dictionary of results
+#     result = {'model': args.model, 'lr': args.lr, 'epochs': args.num_epochs, 'val_accuracy': val_accuracy['accuracy'],
+#               'test_accuracy': test_accuracy['accuracy']}
+    
+#  
+#     print(result)
+# plot everything together
+# models = ['distilbert-base-uncased', 'RoBERTa-base', 't5-small']
+# val_accuracies = [0.7229, 0.6217, 0.6903]
+# test_accuracies = [0.7182, 0.6152, 0.6835]
+
+# fig, ax = plt.subplots()
+# bar_width = 0.4
+
+# x_pos = list(range(len(models)))
+# ax.bar(x_pos, test_accuracies, bar_width, label='Test Accuracy')
+# ax.bar([i + bar_width for i in x_pos], val_accuracies, bar_width, label='Validation Accuracy')
+
+# # add labels and title
+# ax.set_ylabel('Accuracy')
+# ax.set_title('Test and Validation Accuracies of Different Models')
+# ax.set_xticks([i + bar_width / 2 for i in x_pos])
+# ax.set_xticklabels(models)
+# ax.legend()
+
+# # save the plot and show it
+# plt.savefig('test_validation_accuracies.png')
+# plt.show()      
